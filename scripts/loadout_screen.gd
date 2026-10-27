@@ -59,7 +59,7 @@ func _ready() -> void:
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.size_flags_stretch_ratio = 2.0
-	right.add_theme_stylebox_override("panel", UI.box(Color("191c24"), 20, Color("2b3140"), 2))
+	right.add_theme_stylebox_override("panel", UI.box(Color("12151d", 0.75), 28, Color(1, 1, 1, 0.08), 2, 16))
 	_split.add_child(right)
 
 	resized.connect(_relayout)

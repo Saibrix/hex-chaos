@@ -46,11 +46,12 @@ func _init() -> void:
 	gs.game.pieces[Vector2i(to.x, to.y - 2)] = {"owner": 1, "char": 0}
 	gs.game.turn = 0
 	ts = b._tile_size()   # the container re-laid out the board after the first frame
+	var before := gs.game.count(1)
 	b._gui_input(_click(b, to, ts))
 	print("second select: ", b._has_sel, " ", b._sel, " targets ", b._targets, " enemy at ", Vector2i(to.x, to.y - 2))
 	b._gui_input(_click(b, Vector2i(to.x, to.y - 2), ts))
 	await process_frame
-	print("enemy count after capture: ", gs.game.count(1), " (was 2)")
+	print("enemy count after capture: ", gs.game.count(1), " (was ", before, ")")
 
 	gs._pause_layer.show()
 	await process_frame

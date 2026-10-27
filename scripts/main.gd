@@ -11,14 +11,10 @@ var _toast: Label
 
 func _ready() -> void:
 	theme = UI.make_theme()
-	var bg := ColorRect.new()
-	bg.color = UI.BG
-	UI.fill(bg)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(Backdrop.new())
 
 	_toast = UI.label("", 24)
-	_toast.add_theme_stylebox_override("normal", UI.box(Color(0, 0, 0, 0.85), 12))
+	_toast.add_theme_stylebox_override("normal", UI.box(Color("0b0d13", 0.92), 18, Color(1, 1, 1, 0.1), 2, 8))
 	_toast.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_toast.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_toast.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -50,6 +46,8 @@ func _set_screen(s: Control) -> void:
 		_screen.queue_free()
 	_screen = s
 	add_child(s)
+	s.modulate.a = 0.0
+	create_tween().tween_property(s, "modulate:a", 1.0, 0.18)
 	move_child(s, 1)       # keep the toast on top
 	if _toast.get_parent() == null:
 		add_child(_toast)

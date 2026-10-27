@@ -18,6 +18,7 @@ func _ready() -> void:
 	box.add_theme_constant_override("separation", 16)
 	center.add_child(box)
 
+	box.add_child(Logo.new())
 	var title := UI.label("HEX CHAOS", 76)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
@@ -26,7 +27,7 @@ func _ready() -> void:
 	box.add_child(sub)
 	box.add_child(Control.new())
 
-	_add_button(box, "Host", host_pressed)
+	_add_button(box, "Host", host_pressed).theme_type_variation = "PrimaryButton"
 	_add_button(box, "Join", join_pressed)
 	_add_button(box, "Loadout", loadout_pressed)
 	var local := _add_button(box, "Local test (one device)", local_pressed)

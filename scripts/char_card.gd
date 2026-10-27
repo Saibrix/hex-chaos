@@ -28,9 +28,9 @@ func _draw() -> void:
 	var ch := Chars.get_char(char_id)
 	var rect := Rect2(Vector2.ZERO, size)
 	if selected:
-		draw_style_box(UI.box(UI.PANEL_HI, 16, UI.ACCENT, 4), rect)
+		draw_style_box(UI.box(UI.PANEL_HI, 24, UI.ACCENT, 4, 14), rect)
 	else:
-		draw_style_box(UI.box(UI.PANEL, 16, Color("2b3140"), 2), rect)
+		draw_style_box(UI.box(UI.PANEL, 24, Color(1, 1, 1, 0.08), 2, 10), rect)
 
 	var center := Vector2(52, 52)
 	draw_circle(center, 34.0, UI.SIDE_COLORS[0].darkened(0.35))

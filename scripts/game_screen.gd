@@ -61,23 +61,26 @@ func _ready() -> void:
 
 func _make_overlay(title: String, buttons: Array) -> Control:
 	var layer := ColorRect.new()
-	layer.color = Color(0, 0, 0, 0.7)
+	layer.color = Color(0.03, 0.04, 0.07, 0.75)
 	UI.fill(layer)
 	layer.mouse_filter = Control.MOUSE_FILTER_STOP
 	layer.hide()
 	var center := CenterContainer.new()
 	UI.fill(center)
 	layer.add_child(center)
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UI.box(UI.PANEL, 32, Color(1, 1, 1, 0.1), 2, 30))
+	center.add_child(panel)
 	var box := VBoxContainer.new()
 	box.custom_minimum_size = Vector2(380, 0)
 	box.add_theme_constant_override("separation", 16)
-	center.add_child(box)
-	var t := UI.label(title, 48)
+	panel.add_child(box)
+	var t := UI.label(title, 44)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(t)
 	for b in buttons:
-		var btn := UI.button(b[0])
+		var btn := UI.button(b[0], Vector2(0, 68), b[0] == "Resume" or b[0] == "Back to menu")
 		btn.pressed.connect(b[1])
 		box.add_child(btn)
 	add_child(layer)

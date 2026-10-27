@@ -9,8 +9,12 @@ const MUTED := Color("9aa3b5")
 const SIDE_COLORS := [Color("5ad1c8"), Color("ff7a6b")]
 
 
-static func box(fill: Color, radius := 14, border := Color.TRANSPARENT, border_w := 0) -> StyleBoxFlat:
+static func box(fill: Color, radius := 14, border := Color.TRANSPARENT, border_w := 0, shadow := 0) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
+	s.shadow_size = shadow
+	s.shadow_color = Color(0, 0, 0, 0.35)
+	s.shadow_offset = Vector2(0, shadow * 0.4)
+	s.anti_aliasing_size = 1.2
 	s.bg_color = fill
 	s.set_corner_radius_all(radius)
 	s.border_color = border
@@ -26,27 +30,29 @@ static func make_theme() -> Theme:
 	var t := Theme.new()
 	t.default_font_size = 26
 	t.set_color("font_color", "Label", TEXT)
-	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
-		var fill := PANEL_HI
-		if state == "hover":
-			fill = Color("353c50")
-		elif state == "pressed":
-			fill = ACCENT
-		elif state == "disabled":
-			fill = PANEL
-		if state == "focus":
-			t.set_stylebox(state, "Button", StyleBoxEmpty.new())
-		else:
-			t.set_stylebox(state, "Button", box(fill))
-	t.set_color("font_color", "Button", TEXT)
-	t.set_color("font_hover_color", "Button", TEXT)
-	t.set_color("font_pressed_color", "Button", TEXT)
-	t.set_color("font_disabled_color", "Button", MUTED)
+	_style_button(t, "Button", PANEL_HI, Color("353c50"), Color("46506b"), Color(1, 1, 1, 0.08))
+	t.set_type_variation("PrimaryButton", "Button")
+	_style_button(t, "PrimaryButton", ACCENT, ACCENT.lightened(0.15), ACCENT.darkened(0.2), Color(1, 1, 1, 0.25))
 	return t
 
 
-static func button(text: String, min_size := Vector2(0, 68)) -> Button:
+static func _style_button(t: Theme, type: String, fill: Color, hover: Color, pressed: Color, border: Color) -> void:
+	t.set_stylebox("normal", type, box(fill, 22, border, 2, 10))
+	t.set_stylebox("hover", type, box(hover, 22, border, 2, 12))
+	t.set_stylebox("pressed", type, box(pressed, 22, border, 2, 2))
+	t.set_stylebox("disabled", type, box(PANEL, 22, border, 2, 0))
+	t.set_stylebox("focus", type, StyleBoxEmpty.new())
+	t.set_color("font_color", type, TEXT)
+	t.set_color("font_hover_color", type, TEXT)
+	t.set_color("font_pressed_color", type, TEXT)
+	t.set_color("font_disabled_color", type, MUTED)
+	t.set_font_size("font_size", type, 28)
+
+
+static func button(text: String, min_size := Vector2(0, 68), primary := false) -> Button:
 	var b := Button.new()
+	if primary:
+		b.theme_type_variation = "PrimaryButton"
 	b.text = text
 	b.custom_minimum_size = min_size
 	b.focus_mode = Control.FOCUS_NONE
