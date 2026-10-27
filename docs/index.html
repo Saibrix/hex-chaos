@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Hex Chaos</title>
+<style>
+  html, body { margin:0; height:100%; background:#14161c; overflow:hidden; color:#eef0f5; font:16px/1.4 system-ui,-apple-system,sans-serif; }
+  #canvas { display:block; width:100%; height:100%; touch-action:none; outline:none; }
+  #loader { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px; background:#14161c; }
+  #bar { width:220px; height:8px; background:#2b3140; border-radius:4px; overflow:hidden; }
+  #barfill { height:100%; width:0; background:#6c8cff; }
+  #linkui { position:fixed; inset:0; z-index:10; display:none; background:rgba(10,11,15,.94); overflow:auto; padding:16px; box-sizing:border-box; }
+  #linkui .card { max-width:520px; margin:0 auto; background:#1f232d; border-radius:14px; padding:14px; }
+  #linkui button { background:#6c8cff; color:#fff; border:0; border-radius:10px; padding:12px 16px; font-size:16px; margin:4px 4px 4px 0; }
+  #linkui button.sec { background:#394058; }
+  #linkui textarea { width:100%; box-sizing:border-box; height:80px; background:#14161c; color:#eef0f5; border:1px solid #394058; border-radius:8px; padding:8px; font:12px monospace; }
+  #linkui .qr { background:#fff; padding:10px; border-radius:8px; display:inline-block; margin:8px 0; }
+  #linkui video { width:100%; border-radius:8px; background:#000; }
+  #linkui .hide { display:none; }
+  #linkui hr { border:0; border-top:1px solid #394058; margin:12px 0; }
+  #linkstatus { color:#9aa3b5; margin:6px 0; }
+</style>
+<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+
+</head>
+<body>
+<canvas id="canvas">Your browser does not support HTML5 canvas.</canvas>
+<div id="loader"><div>Loading...</div><div id="bar"><div id="barfill"></div></div></div>
+
+<div id="linkui">
+  <div class="card">
+    <b id="linktitle"></b>
+    <div id="linkstatus"></div>
+
+    <div id="hostPart" class="hide">
+      <b>Step 1:</b> let the other phone scan this, or send them the code.
+      <div id="hostQr"></div>
+      <textarea id="hostCode" readonly></textarea>
+      <button id="copyHost" class="sec">Copy code</button>
+      <hr>
+      <b>Step 2:</b> scan or paste the reply from the other phone.
+      <textarea id="hostReply" placeholder="paste reply here"></textarea>
+      <button id="scanReply" class="sec">Scan reply</button>
+      <button id="applyReply">Connect</button>
+    </div>
+
+    <div id="joinPart" class="hide">
+      <b>Step 1:</b> scan or paste the host's code.
+      <textarea id="joinInput" placeholder="paste host code here"></textarea>
+      <button id="scanHost" class="sec">Scan host code</button>
+      <button id="applyHost">Create reply</button>
+      <div id="joinOut" class="hide">
+        <hr>
+        <b>Step 2:</b> let the host scan this, or send them the reply.
+        <div id="joinQr"></div>
+        <textarea id="joinCode" readonly></textarea>
+        <button id="copyJoin" class="sec">Copy reply</button>
+      </div>
+    </div>
+
+    <div id="scanBox" class="hide">
+      <video id="video" playsinline muted></video>
+      <button id="stopScan" class="sec">Cancel scan</button>
+    </div>
+
+    <hr>
+    <button id="linkCancel" class="sec">Cancel</button>
+  </div>
+</div>
+
+<script src="index.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script>
+// ---------- phone-to-phone link (WebRTC, no server; only a public STUN lookup) ----------
+window.Link = (function () {
+  const $ = id => document.getElementById(id);
+  const show = (id, on = true) => $(id).classList.toggle('hide', !on);
+  const events = [];
+  let pc = null, dc = null, scanStream = null, scanTimer = null, scanTarget = null;
+
+  const emit = (e, extra) => events.push(Object.assign({ e }, extra || {}));
+  const status = t => { $('linkstatus').textContent = t; };
+  const encode = d => btoa(unescape(encodeURIComponent(JSON.stringify(d))));
+  const decode = t => JSON.parse(decodeURIComponent(escape(atob(t.trim()))));
+
+  function reset() {
+    stopScan();
+    if (dc) { try { dc.close(); } catch (e) {} }
+    if (pc) { try { pc.close(); } catch (e) {} }
+    pc = dc = null;
+  }
+
+  function newPeer(isHost) {
+    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    pc.onconnectionstatechange = () => {
+      const s = pc.connectionState;
+      if (s === 'failed') status('Failed: this network blocks a direct link. Try Wi-Fi on both phones.');
+      else if (s === 'disconnected' || s === 'closed') emit('close');
+    };
+    pc.ondatachannel = e => setup(e.channel, isHost);
+  }
+
+  function setup(ch, isHost) {
+    dc = ch;
+    dc.onopen = () => { $('linkui').style.display = 'none'; stopScan(); emit('open', { host: isHost }); };
+    dc.onclose = () => emit('close');
+    dc.onmessage = e => emit('msg', { d: e.data });
+  }
+
+  function waitIce() {
+    return new Promise(res => {
+      if (pc.iceGatheringState === 'complete') return res();
+      const done = () => { pc.removeEventListener('icegatheringstatechange', check); res(); };
+      const check = () => { if (pc.iceGatheringState === 'complete') done(); };
+      pc.addEventListener('icegatheringstatechange', check);
+      setTimeout(done, 5000);
+    });
+  }
+
+  function drawQr(boxId, text) {
+    const box = $(boxId);
+    box.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'qr';
+    box.appendChild(wrap);
+    try { new QRCode(wrap, { text, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.L }); }
+    catch (e) { wrap.remove(); box.textContent = 'Code too big for a QR, use copy/paste.'; }
+  }
+
+  async function copy(id) {
+    const t = $(id);
+    try { await navigator.clipboard.writeText(t.value); } catch (e) { t.select(); document.execCommand('copy'); }
+  }
+
+  async function startScan(targetId) {
+    scanTarget = targetId;
+    try { scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); }
+    catch (e) { status('Camera not allowed, paste the code instead.'); return; }
+    const v = $('video');
+    v.srcObject = scanStream;
+    await v.play();
+    show('scanBox');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    scanTimer = setInterval(() => {
+      if (!v.videoWidth) return;
+      canvas.width = v.videoWidth; canvas.height = v.videoHeight;
+      ctx.drawImage(v, 0, 0);
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const hit = jsQR(img.data, img.width, img.height);
+      if (hit && hit.data) { $(scanTarget).value = hit.data; stopScan(); }
+    }, 250);
+  }
+  function stopScan() {
+    clearInterval(scanTimer);
+    if (scanStream) scanStream.getTracks().forEach(t => t.stop());
+    scanStream = null;
+    show('scanBox', false);
+  }
+
+  function openPanel(title) {
+    reset();
+    show('hostPart', false); show('joinPart', false); show('joinOut', false);
+    $('hostQr').innerHTML = ''; $('joinQr').innerHTML = '';
+    $('hostCode').value = ''; $('hostReply').value = ''; $('joinInput').value = ''; $('joinCode').value = '';
+    $('linktitle').textContent = title;
+    status('');
+    $('linkui').style.display = 'block';
+  }
+
+  $('copyHost').onclick = () => copy('hostCode');
+  $('copyJoin').onclick = () => copy('joinCode');
+  $('scanReply').onclick = () => startScan('hostReply');
+  $('scanHost').onclick = () => startScan('joinInput');
+  $('stopScan').onclick = stopScan;
+  $('linkCancel').onclick = () => { reset(); $('linkui').style.display = 'none'; emit('cancel'); };
+
+  $('applyReply').onclick = async () => {
+    try { await pc.setRemoteDescription(decode($('hostReply').value)); status('Connecting...'); }
+    catch (e) { status('That reply code is not valid.'); }
+  };
+  $('applyHost').onclick = async () => {
+    try {
+      const offer = decode($('joinInput').value);
+      newPeer(false);
+      await pc.setRemoteDescription(offer);
+      status('Creating reply...');
+      await pc.setLocalDescription(await pc.createAnswer());
+      await waitIce();
+      const code = encode(pc.localDescription);
+      $('joinCode').value = code;
+      drawQr('joinQr', code);
+      show('joinOut');
+      status('Show the reply to the host.');
+    } catch (e) { status('That host code is not valid.'); }
+  };
+
+  return {
+    async openHost() {
+      openPanel('Host a game');
+      show('hostPart');
+      status('Creating code...');
+      newPeer(true);
+      setup(pc.createDataChannel('game'), true);
+      await pc.setLocalDescription(await pc.createOffer());
+      await waitIce();
+      const code = encode(pc.localDescription);
+      $('hostCode').value = code;
+      drawQr('hostQr', code);
+      status('Waiting for the other phone.');
+    },
+    openJoin() {
+      openPanel('Join a game');
+      show('joinPart');
+      status('Paste or scan the host code.');
+    },
+    send(s) { if (dc && dc.readyState === 'open') dc.send(s); },
+    close() { reset(); },
+    poll() {
+      if (!events.length) return '';
+      const s = JSON.stringify(events);
+      events.length = 0;
+      return s;
+    },
+  };
+})();
+
+// ---------- Godot start ----------
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":58000,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_THREADS_ENABLED = false;
+const engine = new Engine(GODOT_CONFIG);
+(function () {
+  const loader = document.getElementById('loader');
+  const fill = document.getElementById('barfill');
+  const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+  if (missing.length !== 0) {
+    loader.firstElementChild.textContent = 'Your browser cannot run this game: ' + missing.join(', ');
+    return;
+  }
+  engine.startGame({
+    onProgress: (current, total) => { if (total > 0) fill.style.width = (100 * current / total) + '%'; },
+  }).then(() => { loader.style.display = 'none'; })
+    .catch(err => { loader.firstElementChild.textContent = 'Failed to start: ' + err.message; });
+})();
+</script>
+</body>
+</html>
+
