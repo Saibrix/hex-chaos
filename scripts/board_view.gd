@@ -54,6 +54,7 @@ func _ready() -> void:
 	_base = BaseLayer.new()
 	_base.view = self
 	_base.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_base.show_behind_parent = true
 	UI.fill(_base)
 	add_child(_base)
 	resized.connect(queue_redraw)
