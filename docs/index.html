@@ -85,8 +85,25 @@ window.Link = (function () {
 
   const emit = (e, extra) => events.push(Object.assign({ e }, extra || {}));
   const status = t => { $('linkstatus').textContent = t; };
-  const encode = d => btoa(unescape(encodeURIComponent(JSON.stringify(d))));
-  const decode = t => JSON.parse(decodeURIComponent(escape(atob(t.trim()))));
+  // Codes are deflated (about half the size, so the QR is much easier to scan) and prefixed
+  // with "Z". Plain base64 JSON (starts with "ey") is still accepted.
+  const toB64 = bytes => { let s = ''; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); };
+  const fromB64 = t => Uint8Array.from(atob(t), c => c.charCodeAt(0));
+  const pipe = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+  async function encode(d) {
+    const raw = new TextEncoder().encode(JSON.stringify(d));
+    if (typeof CompressionStream === 'undefined') return toB64(raw);
+    return 'Z' + toB64(await pipe(raw, new CompressionStream('deflate-raw')));
+  }
+  async function decode(t) {
+    // chat apps add spaces, line breaks and quotes; none of them belong to the code
+    t = t.replace(/[\s"'<>`​-‏﻿]/g, '');
+    if (!t) throw new Error('nothing pasted');
+    try {
+      const raw = t[0] === 'Z' ? await pipe(fromB64(t.slice(1)), new DecompressionStream('deflate-raw')) : fromB64(t);
+      return JSON.parse(new TextDecoder().decode(raw));
+    } catch (e) { throw new Error('incomplete or damaged'); }
+  }
 
   function reset() {
     stopScan();
@@ -181,23 +198,23 @@ window.Link = (function () {
   $('linkCancel').onclick = () => { reset(); $('linkui').style.display = 'none'; emit('cancel'); };
 
   $('applyReply').onclick = async () => {
-    try { await pc.setRemoteDescription(decode($('hostReply').value)); status('Connecting...'); }
-    catch (e) { status('That reply code is not valid.'); }
+    try { await pc.setRemoteDescription(await decode($('hostReply').value)); status('Connecting...'); }
+    catch (e) { status('That reply code is not valid (' + e.message + '). Copy it again completely.'); }
   };
   $('applyHost').onclick = async () => {
     try {
-      const offer = decode($('joinInput').value);
+      const offer = await decode($('joinInput').value);
       newPeer(false);
       await pc.setRemoteDescription(offer);
       status('Creating reply...');
       await pc.setLocalDescription(await pc.createAnswer());
       await waitIce();
-      const code = encode(pc.localDescription);
+      const code = await encode(pc.localDescription);
       $('joinCode').value = code;
       drawQr('joinQr', code);
       show('joinOut');
       status('Show the reply to the host.');
-    } catch (e) { status('That host code is not valid.'); }
+    } catch (e) { status('That host code is not valid (' + e.message + '). Copy it again completely.'); }
   };
 
   return {
@@ -209,7 +226,7 @@ window.Link = (function () {
       setup(pc.createDataChannel('game'), true);
       await pc.setLocalDescription(await pc.createOffer());
       await waitIce();
-      const code = encode(pc.localDescription);
+      const code = await encode(pc.localDescription);
       $('hostCode').value = code;
       drawQr('hostQr', code);
       status('Waiting for the other phone.');
