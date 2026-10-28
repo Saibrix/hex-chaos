@@ -47,6 +47,7 @@ class BaseLayer extends Control:
 
 
 var _base: BaseLayer
+var _base_mesh: ArrayMesh
 
 
 func _ready() -> void:
@@ -58,7 +59,7 @@ func _ready() -> void:
 	UI.fill(_base)
 	add_child(_base)
 	resized.connect(queue_redraw)
-	resized.connect(_base.queue_redraw)
+	resized.connect(_redraw_base)
 	set_process(false)
 
 
@@ -79,7 +80,7 @@ func animate_move(from: Vector2i, to: Vector2i, captured: Dictionary) -> void:
 	_anim_to = to
 	_ghost = captured
 	_anim_t = 0.0
-	_base.queue_redraw()
+	_redraw_base()
 	set_process(true)
 	if _tween:
 		_tween.kill()
@@ -214,27 +215,64 @@ func _on_release(pos: Vector2) -> void:
 		clear_selection()   # tapped the selected piece again
 
 
+# The board is about 450 polygons. Drawn one by one that is 450 draw calls per rebuild, which
+# phones handle badly, so it is baked into a single vertex-coloured mesh (1 draw call).
 func draw_base(ci: CanvasItem) -> void:
 	if game == null:
 		return
+	if _base_mesh == null:
+		_base_mesh = _build_base_mesh()
+	ci.draw_mesh(_base_mesh, null)
+
+
+func _build_base_mesh() -> ArrayMesh:
 	var ts := _tile_size()
+	var verts := PackedVector2Array()
+	var cols := PackedColorArray()
 	var cells := Hex.all_cells()
-	# Wooden frame and drop shadow.
 	for c in cells:
-		ci.draw_colored_polygon(Hex.corners(_pos(c, ts) + Vector2(0, ts * 0.18), ts * 1.1), Color(0, 0, 0, 0.18))
+		_add_fan(verts, cols, Hex.corners(_pos(c, ts) + Vector2(0, ts * 0.18), ts * 1.1), Color(0, 0, 0, 0.18))
 	for c in cells:
-		ci.draw_colored_polygon(Hex.corners(_pos(c, ts), ts * 1.07), FRAME_COLOR)
+		_add_fan(verts, cols, Hex.corners(_pos(c, ts), ts * 1.07), FRAME_COLOR)
+	var w := maxf(1.5, ts * 0.05)
 	for c in cells:
-		var p := _pos(c, ts)
-		var col: Color = TILE_COLORS[posmod(c.x - c.y, 3)]
-		var pts := Hex.corners(p, ts * 0.96)
-		ci.draw_colored_polygon(pts, col)
+		var pts := Hex.corners(_pos(c, ts), ts * 0.96)
+		_add_fan(verts, cols, pts, TILE_COLORS[posmod(c.x - c.y, 3)])
 		# soft top light and bottom shade give the tiles a little depth
-		ci.draw_polyline(PackedVector2Array([pts[3], pts[4], pts[5]]), Color(1, 1, 1, 0.22), maxf(1.5, ts * 0.05))
-		ci.draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2]]), Color(0, 0, 0, 0.2), maxf(1.5, ts * 0.05))
-	if not game.last_move.is_empty():
-		for c in game.last_move:
-			ci.draw_colored_polygon(Hex.corners(_pos(c, ts), ts * 0.96), Color(1, 0.95, 0.5, 0.22))
+		_add_line(verts, cols, [pts[3], pts[4], pts[5]], w, Color(1, 1, 1, 0.22))
+		_add_line(verts, cols, [pts[0], pts[1], pts[2]], w, Color(0, 0, 0, 0.2))
+	for c in game.last_move:
+		_add_fan(verts, cols, Hex.corners(_pos(c, ts), ts * 0.96), Color(1, 0.95, 0.5, 0.22))
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_COLOR] = cols
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+func _add_fan(verts: PackedVector2Array, cols: PackedColorArray, pts: PackedVector2Array, col: Color) -> void:
+	for i in range(1, pts.size() - 1):
+		verts.append_array([pts[0], pts[i], pts[i + 1]])
+		for k in 3:
+			cols.append(col)
+
+
+func _add_line(verts: PackedVector2Array, cols: PackedColorArray, pts: Array, width: float, col: Color) -> void:
+	for i in pts.size() - 1:
+		var d: Vector2 = (pts[i + 1] - pts[i]).normalized() * width * 0.5
+		var n := Vector2(-d.y, d.x)
+		var a: Vector2 = pts[i] - d
+		var b: Vector2 = pts[i + 1] + d
+		verts.append_array([a + n, b + n, b - n, a + n, b - n, a - n])
+		for k in 6:
+			cols.append(col)
+
+
+func _redraw_base() -> void:
+	_base_mesh = null
+	_base.queue_redraw()
 
 
 func _draw() -> void:
