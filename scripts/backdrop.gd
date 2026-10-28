@@ -18,9 +18,16 @@ func _ready() -> void:
 			"c": UI.SIDE_COLORS[i % 2]})
 
 
+var _acc := 0.0
+
+
+# Redrawn at about 20 fps; the slow drift does not need more, and hidden means no cost at all.
 func _process(delta: float) -> void:
 	_t += delta
-	queue_redraw()
+	_acc += delta
+	if visible and _acc >= 0.05:
+		_acc = 0.0
+		queue_redraw()
 
 
 func _draw() -> void:

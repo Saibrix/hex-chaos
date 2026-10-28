@@ -43,10 +43,20 @@ func _js(code: String) -> Variant:
 	return JavaScriptBridge.eval(code, true)
 
 
-func _process(_delta: float) -> void:
+var _iface: JavaScriptObject
+var _wait := 0.0
+
+
+func _process(delta: float) -> void:
 	if not available():
 		return
-	var raw = _js("Link.poll()")
+	_wait -= delta
+	if _wait > 0.0:
+		return
+	_wait = 0.05
+	if _iface == null:
+		_iface = JavaScriptBridge.get_interface("Link")
+	var raw = _iface.poll()
 	if typeof(raw) != TYPE_STRING or raw == "":
 		return
 	var events = JSON.parse_string(raw)

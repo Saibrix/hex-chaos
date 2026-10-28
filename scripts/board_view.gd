@@ -37,9 +37,28 @@ var _particles: Array[Dictionary] = []
 var _rings: Array[Dictionary] = []
 
 
+# Tiles never change while a piece moves, so they live on their own node: Godot keeps its
+# draw commands and only rebuilds them when queue_redraw() is called on it.
+class BaseLayer extends Control:
+	var view: BoardView
+
+	func _draw() -> void:
+		view.draw_base(self)
+
+
+var _base: BaseLayer
+
+
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	_base = BaseLayer.new()
+	_base.view = self
+	_base.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UI.fill(_base)
+	add_child(_base)
 	resized.connect(queue_redraw)
+	resized.connect(_base.queue_redraw)
+	set_process(false)
 
 
 func clear_selection() -> void:
@@ -59,6 +78,8 @@ func animate_move(from: Vector2i, to: Vector2i, captured: Dictionary) -> void:
 	_anim_to = to
 	_ghost = captured
 	_anim_t = 0.0
+	_base.queue_redraw()
+	set_process(true)
 	if _tween:
 		_tween.kill()
 	_tween = create_tween()
@@ -103,8 +124,11 @@ func _process(delta: float) -> void:
 		r["t"] += delta / r["life"]
 	_rings = _rings.filter(func(r): return r["t"] < 1.0)
 	_shake = maxf(0.0, _shake - delta * size.y * 0.6)
-	if _has_sel or _dragging or _shake > 0.0 or not _particles.is_empty() or not _rings.is_empty():
+	_base.position = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * _shake if _shake > 0.0 else Vector2.ZERO
+	if _has_sel or _dragging or _shake > 0.0 or _anim_t < 1.0 or not _particles.is_empty() or not _rings.is_empty():
 		queue_redraw()
+	else:
+		set_process(false)
 
 
 func _tile_size() -> float:
@@ -160,6 +184,7 @@ func _on_press(pos: Vector2) -> void:
 		_sel = c
 		_targets = game.legal_moves(c)
 		_pressing = true
+		set_process(true)
 		queue_redraw()
 	elif _has_sel and c in _targets:
 		var from := _sel
@@ -188,31 +213,33 @@ func _on_release(pos: Vector2) -> void:
 		clear_selection()   # tapped the selected piece again
 
 
-func _draw() -> void:
+func draw_base(ci: CanvasItem) -> void:
 	if game == null:
 		return
 	var ts := _tile_size()
-	if _shake > 0.0:
-		draw_set_transform(Vector2(randf_range(-1, 1), randf_range(-1, 1)) * _shake)
-
 	var cells := Hex.all_cells()
 	# Wooden frame and drop shadow.
 	for c in cells:
-		draw_colored_polygon(Hex.corners(_pos(c, ts) + Vector2(0, ts * 0.18), ts * 1.1), Color(0, 0, 0, 0.18))
+		ci.draw_colored_polygon(Hex.corners(_pos(c, ts) + Vector2(0, ts * 0.18), ts * 1.1), Color(0, 0, 0, 0.18))
 	for c in cells:
-		draw_colored_polygon(Hex.corners(_pos(c, ts), ts * 1.07), FRAME_COLOR)
+		ci.draw_colored_polygon(Hex.corners(_pos(c, ts), ts * 1.07), FRAME_COLOR)
 	for c in cells:
 		var p := _pos(c, ts)
 		var col: Color = TILE_COLORS[posmod(c.x - c.y, 3)]
 		var pts := Hex.corners(p, ts * 0.96)
-		draw_colored_polygon(pts, col)
+		ci.draw_colored_polygon(pts, col)
 		# soft top light and bottom shade give the tiles a little depth
-		draw_polyline(PackedVector2Array([pts[3], pts[4], pts[5]]), Color(1, 1, 1, 0.22), maxf(1.5, ts * 0.05), true)
-		draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2]]), Color(0, 0, 0, 0.2), maxf(1.5, ts * 0.05), true)
-
+		ci.draw_polyline(PackedVector2Array([pts[3], pts[4], pts[5]]), Color(1, 1, 1, 0.22), maxf(1.5, ts * 0.05))
+		ci.draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2]]), Color(0, 0, 0, 0.2), maxf(1.5, ts * 0.05))
 	if not game.last_move.is_empty():
 		for c in game.last_move:
-			draw_colored_polygon(Hex.corners(_pos(c, ts), ts * 0.96), Color(1, 0.95, 0.5, 0.22))
+			ci.draw_colored_polygon(Hex.corners(_pos(c, ts), ts * 0.96), Color(1, 0.95, 0.5, 0.22))
+
+
+func _draw() -> void:
+	if game == null:
+		return
+	var ts := _tile_size()
 
 	var pulse := 0.5 + 0.5 * sin(_time * 5.0)
 	if _has_sel:
@@ -263,7 +290,6 @@ func _draw() -> void:
 		if hover in _targets:
 			draw_arc(_pos(hover, ts), ts * 0.9, 0.0, TAU, 6, Color(1, 1, 1, 0.9), 2.5, true)
 
-	draw_set_transform(Vector2.ZERO)
 
 
 func _draw_piece(p: Vector2, ts: float, piece: Dictionary, scale_f: float, lift: float) -> void:

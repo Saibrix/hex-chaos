@@ -7,11 +7,13 @@ var link := Link.new()
 
 var _screen: Control
 var _toast: Label
+var _backdrop: Backdrop
 
 
 func _ready() -> void:
 	theme = UI.make_theme()
-	add_child(Backdrop.new())
+	_backdrop = Backdrop.new()
+	add_child(_backdrop)
 
 	_toast = UI.label("", 24)
 	_toast.add_theme_stylebox_override("normal", UI.box(Color("0b0d13", 0.92), 18, Color(1, 1, 1, 0.1), 2, 8))
@@ -45,6 +47,7 @@ func _set_screen(s: Control) -> void:
 	if _screen:
 		_screen.queue_free()
 	_screen = s
+	_backdrop.visible = not (s is GameScreen)
 	add_child(s)
 	s.modulate.a = 0.0
 	create_tween().tween_property(s, "modulate:a", 1.0, 0.18)
